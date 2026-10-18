@@ -150,7 +150,7 @@ def main():
         height=WINDOW_HEIGHT,
         resizable=True,
         text_select=True,
-        background_color="#08040f",
+        background_color="#090a0f",
     )
 
     # Optional automated close for CI / automated testing

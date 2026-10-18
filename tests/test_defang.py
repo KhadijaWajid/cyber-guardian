@@ -74,3 +74,48 @@ def test_highlight_evidence_color_chips():
     assert ">password<" in highlighted
     assert ">https://fake-login.com<" in highlighted
 
+
+def test_highlight_evidence_no_urls():
+    """Ensure highlight_evidence does not raise IndexError when suspicious_urls is empty."""
+    from src.utils import highlight_evidence
+    from src.schemas import ThreatSignals
+
+    signals = ThreatSignals(
+        urgency_detected=True,
+        sensitive_info_requested=True,
+        sensitive_info_details=["social security number", "pin"],
+        suspicious_urls=[],
+        key_findings=["Urgency driver", "Credential harvesting"],
+    )
+
+    text = "IMMEDIATELY send your pin and social security number or account will be suspended."
+    # Should not raise IndexError: no such group
+    highlighted = highlight_evidence(text, signals)
+
+    assert 'class="chip-urgency"' in highlighted
+    assert 'class="chip-sensitive"' in highlighted
+    assert 'class="chip-url"' not in highlighted
+    assert ">IMMEDIATELY<" in highlighted or ">immediately<" in highlighted.lower()
+    assert ">pin<" in highlighted.lower()
+
+
+def test_highlight_evidence_benign():
+    """Ensure highlight_evidence gracefully formats text with zero signals."""
+    from src.utils import highlight_evidence
+    from src.schemas import ThreatSignals
+
+    signals = ThreatSignals(
+        urgency_detected=False,
+        sensitive_info_requested=False,
+        sensitive_info_details=[],
+        suspicious_urls=[],
+        key_findings=[],
+    )
+
+    text = "Hello Team,\nPlease review the minutes from our meeting.\nBest regards."
+    highlighted = highlight_evidence(text, signals)
+
+    assert "chip-" not in highlighted
+    assert "<br>" in highlighted
+    assert "Hello Team," in highlighted
+

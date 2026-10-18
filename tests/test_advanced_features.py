@@ -361,3 +361,40 @@ def test_user_specific_threat_records_filtering(temp_db):
     all_records = get_all_records(db_path=temp_db)
     assert len(all_records) == 2
 
+
+def test_scammer_turn_schema():
+    from src.honeypot import ScammerTurn
+    turn = ScammerTurn(
+        reply="Please confirm your account password right now.",
+        tactic="⚡ Tactic: False Urgency | 🎯 Objective: Credential Harvesting",
+    )
+    assert "password" in turn.reply
+    assert "False Urgency" in turn.tactic
+
+
+def test_simulate_scammer_reply_deterministic():
+    from src.honeypot import simulate_scammer_reply
+    res = simulate_scammer_reply(
+        messages=[{"role": "user", "content": "What is your official employee badge number?"}],
+        persona="Bank Fraud Department",
+        force_fallback=True,
+    )
+    assert "content" in res
+    assert "tactic" in res
+    assert len(res["content"]) > 10
+    assert "⚡ Tactic:" in res["tactic"]
+    assert "🎯 Objective:" in res["tactic"]
+
+
+def test_simulate_scammer_reply_family_distress():
+    from src.honeypot import simulate_scammer_reply
+    res = simulate_scammer_reply(
+        messages=[{"role": "user", "content": "Where did we go on vacation last year?"}],
+        persona="Urgent Family Distress",
+        force_fallback=True,
+    )
+    assert "content" in res
+    assert "tactic" in res
+    assert "Emotional Coercion" in res["tactic"]
+
+

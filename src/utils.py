@@ -334,15 +334,19 @@ def highlight_evidence(text: str, signals: Any) -> str:
     master_pattern = re.compile("|".join(parts), re.IGNORECASE)
 
     def replacer(m):
-        if m.group("URL"):
-            val = html.escape(m.group("URL"))
-            return f'<span class="chip-url" title="Suspicious Link">{val}</span>'
-        elif m.group("SENSITIVE"):
-            val = html.escape(m.group("SENSITIVE"))
-            return f'<span class="chip-sensitive" title="Sensitive Data Solicitation">{val}</span>'
-        elif m.group("URGENCY"):
-            val = html.escape(m.group("URGENCY"))
-            return f'<span class="chip-urgency" title="Urgency / Panic Driver">{val}</span>'
+        try:
+            group_dict = m.groupdict()
+            if group_dict.get("URL"):
+                val = html.escape(group_dict["URL"])
+                return f'<span class="chip-url" title="Suspicious Link">{val}</span>'
+            elif group_dict.get("SENSITIVE"):
+                val = html.escape(group_dict["SENSITIVE"])
+                return f'<span class="chip-sensitive" title="Sensitive Data Solicitation">{val}</span>'
+            elif group_dict.get("URGENCY"):
+                val = html.escape(group_dict["URGENCY"])
+                return f'<span class="chip-urgency" title="Urgency / Panic Driver">{val}</span>'
+        except (IndexError, KeyError, Exception):
+            pass
         return html.escape(m.group(0))
 
     last_idx = 0

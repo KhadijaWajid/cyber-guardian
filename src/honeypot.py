@@ -153,3 +153,138 @@ def generate_counter_probe(
     except Exception as e:
         logger.warning("Honeypot LLM generation failed (%s). Utilizing deterministic forensic probe generator.", e)
         return _get_deterministic_fallback_probes(attacker_last_message)
+
+
+# ==============================================================================
+# MULTI-TURN SCAMMER SIMULATION & BEHAVIORAL ANALYSIS
+# ==============================================================================
+
+class ScammerTurn(BaseModel):
+    reply: str = Field(description="Realistic in-character response from the simulated scammer advancing the social engineering attack")
+    tactic: str = Field(description="Behavioral analysis tag formatted as '⚡ Tactic: <Tactic Name> | 🎯 Objective: <Objective>'")
+
+
+SCAMMER_SIMULATION_SYSTEM_INSTRUCTION = """
+You are an educational adversary simulator in the Cyber Guardian cyber safety suite.
+Your purpose is to roleplay a social engineering scammer in a controlled honeypot training sandbox so security analysts can practice counter-interrogation.
+
+CRITICAL SAFETY BOUNDARIES:
+- NEVER output actual malicious URLs or IPs (always use safe defanged placeholders like hxxps://internal-auth[.]example[.]com if pretending to send a link).
+- NEVER output executable exploit code, shell commands, or real malware payloads.
+- Strictly simulate non-harmful conversational social engineering dialogue (false urgency, fabricated authority, evasion of verification).
+
+PERSONA INSTRUCTIONS:
+- Stay firmly in character as the specified scammer persona.
+- Defend the scam, fabricate urgency, invent plausible bureaucratic or emotional excuses, and push the analyst to comply with your objective (credentials, payment, remote access, OTP).
+- Provide a concise in-character reply (2 to 4 sentences).
+- Provide a structured behavioral analysis tag summarizing the tactic and objective, formatted as:
+  '⚡ Tactic: <Tactic Name> | 🎯 Objective: <Immediate Objective>'
+- Output strictly structured JSON conforming to the requested schema.
+"""
+
+
+def _get_deterministic_scammer_reply(user_message: str, persona: str) -> Dict[str, str]:
+    msg_l = (user_message or "").lower()
+    p_l = (persona or "").lower()
+
+    if "family" in p_l or any(k in msg_l for k in ["mom", "dad", "cabin", "dog", "relative"]):
+        reply = (
+            "Please stop asking questions right now! I'm stranded at the station, my phone battery is at 2%, "
+            "and I can't receive calls. Just send the $450 to this temporary number right now or I'm stuck here all night!"
+        )
+        tactic = "⚡ Tactic: Emotional Coercion & Panic Driver | 🎯 Objective: Evade Out-of-Band Call"
+    elif "tech support" in p_l or any(k in msg_l for k in ["anydesk", "teamviewer", "badge", "id", "ip"]):
+        reply = (
+            "This is Senior Engineer David Miller from Microsoft Security Operations (ID #MS-7719). "
+            "Your machine's IP is broadcasting malicious outbound packets right now. If you do not allow remote diagnostic "
+            "connection within 5 minutes, your Windows license will be permanently revoked and forwarded to law enforcement."
+        )
+        tactic = "⚡ Tactic: Technical Intimidation & False Authority | 🎯 Objective: Secure Remote Desktop Access"
+    elif "crypto" in p_l or any(k in msg_l for k in ["crypto", "wallet", "investment", "roi", "deposit"]):
+        reply = (
+            "Our automated arbitrage pool has locked in your 350% yield, but the liquidity allocation pool is 98% subscribed. "
+            "You have exactly 10 minutes to deposit the validation balance to secure your tranche before the smart contract refunds."
+        )
+        tactic = "⚡ Tactic: Artificial Scarcity & Greed Exploitation | 🎯 Objective: Immediate Crypto Deposit"
+    elif "bank" in p_l or any(k in msg_l for k in ["bank", "wells", "fargo", "chase", "fraud", "account"]):
+        reply = (
+            "This is the Automated Fraud Prevention Desk. We have detected unauthorized wire transfers totaling $2,450. "
+            "For your protection, please confirm your 6-digit one-time passcode (OTP) or account password right now to cancel this transaction."
+        )
+        tactic = "⚡ Tactic: Fabricated Emergency & Account Threat | 🎯 Objective: Credential / OTP Harvesting"
+    else:
+        reply = (
+            "Notice: We have flagged multiple security violations on your account profile. "
+            "Please confirm your credentials immediately to avoid permanent account termination and legal escalation."
+        )
+        tactic = "⚡ Tactic: False Urgency & Fear Induction | 🎯 Objective: Force Immediate Compliance"
+
+    return {"content": reply, "tactic": tactic}
+
+
+def simulate_scammer_reply(
+    messages: List[Dict[str, Any]],
+    persona: str = "Bank Fraud Department",
+    current_threat_context: str = "",
+    client: Optional[genai.Client] = None,
+    force_fallback: bool = False,
+) -> Dict[str, str]:
+    """
+    Simulates a turn of the scammer in the honeypot sandbox, returning an in-character
+    reply and a structured behavioral analysis tag.
+    """
+    latest_user_msg = ""
+    for m in reversed(messages):
+        if m.get("role") in ["user", "analyst"]:
+            latest_user_msg = m.get("content", "")
+            break
+
+    if force_fallback:
+        return _get_deterministic_scammer_reply(latest_user_msg, persona)
+
+    # Format transcript
+    history_lines = []
+    if current_threat_context:
+        history_lines.append(f"Initial Threat Context / Original Scam Bait:\n{current_threat_context}\n")
+
+    for turn in messages:
+        sender = "Analyst (User)" if turn.get("role") in ["user", "analyst"] else "Scammer (You)"
+        content = turn.get("content", turn.get("text", ""))
+        history_lines.append(f"{sender}: {content}")
+
+    conversation_text = "\n".join(history_lines)
+
+    if not client:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return _get_deterministic_scammer_reply(latest_user_msg, persona)
+        try:
+            client = get_genai_client()
+        except Exception:
+            return _get_deterministic_scammer_reply(latest_user_msg, persona)
+
+    prompt = (
+        f"Active Persona: {persona}\n"
+        f"Conversation History:\n{conversation_text}\n\n"
+        f"Respond as the scammer to the latest message. Maintain urgency and evasion tactics while complying with safety bounds."
+    )
+
+    config = types.GenerateContentConfig(
+        system_instruction=SCAMMER_SIMULATION_SYSTEM_INSTRUCTION,
+        response_mime_type="application/json",
+        response_schema=ScammerTurn,
+        temperature=0.7,
+    )
+
+    try:
+        response = generate_with_fallback(
+            client=client,
+            contents=prompt,
+            config=config,
+        )
+        data = ScammerTurn.model_validate_json(response.text)
+        return {"content": data.reply, "tactic": data.tactic}
+    except Exception as e:
+        logger.warning("Scammer simulation LLM turn failed (%s). Using deterministic fallback.", e)
+        return _get_deterministic_scammer_reply(latest_user_msg, persona)
+
