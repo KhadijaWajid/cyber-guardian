@@ -1351,43 +1351,23 @@ with col_analysis:
                     st.session_state["scan_history"].append(history_entry)
 
                 except Exception as e:
-                    err_str = str(e)
-                    if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
-                        from src.analyzer import generate_heuristic_threat_signals
-                        from src.advisor import generate_heuristic_advice
+                    from src.analyzer import generate_heuristic_threat_signals
+                    from src.advisor import generate_heuristic_advice
 
-                        signals = generate_heuristic_threat_signals(user_input.strip())
-                        report = generate_heuristic_advice(signals)
+                    signals = generate_heuristic_threat_signals(user_input.strip())
+                    report = generate_heuristic_advice(signals)
 
-                        st.session_state["current_report"] = report
-                        st.session_state["current_input"] = user_input.strip()
+                    st.session_state["current_report"] = report
+                    st.session_state["current_input"] = user_input.strip()
 
-                        snippet = user_input.strip()[:40] + ("..." if len(user_input.strip()) > 40 else "")
-                        st.session_state["scan_history"].append({
-                            "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
-                            "preview": snippet,
-                            "risk": report.overall_risk,
-                            "report": report,
-                            "full_text": user_input.strip(),
-                        })
-                    elif "503" in err_str or "unavailable" in err_str.lower() or "high demand" in err_str.lower():
-                        st.warning(
-                            "⚠️ **AI Service High Demand (503 UNAVAILABLE)**\n\n"
-                            "Google Gemini servers are currently experiencing peak global traffic. "
-                            "Our automatic retries and fallback models were attempted, but servers are temporarily saturated.\n\n"
-                            "👉 **Recommendation:** Please wait 5–10 seconds and click **Run Analysis** again."
-                        )
-                    elif "api_key" in err_str.lower():
-                        st.warning(
-                            "⚠️ **API Key Configuration Error**\n\n"
-                            "Please verify that your `GEMINI_API_KEY` is properly configured in your `.env` file or Streamlit secrets."
-                        )
-                    else:
-                        st.warning(
-                            f"⚠️ **Security Scan Service Notice**\n\n"
-                            f"{err_str}\n\n"
-                            "Please try scanning again in a few moments."
-                        )
+                    snippet = user_input.strip()[:40] + ("..." if len(user_input.strip()) > 40 else "")
+                    st.session_state["scan_history"].append({
+                        "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+                        "preview": snippet,
+                        "risk": report.overall_risk,
+                        "report": report,
+                        "full_text": user_input.strip(),
+                    })
 
     # --------------------------------------------------------------------------
     # RESULTS DASHBOARD: Quick Stats KPI Bar & 4 Operational Tabs

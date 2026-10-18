@@ -13,8 +13,7 @@ logger = logging.getLogger("cyber_guardian.honeypot")
 
 HONEYPOT_MODEL_CHAIN: List[str] = [
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-3.8-flash",
 ]
 
 
@@ -301,13 +300,12 @@ def simulate_scammer_reply(
     if not client:
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            return _get_deterministic_scammer_reply(latest_user_msg, persona)
+            return _get_rate_limit_scammer_reply(persona, current_threat_context, latest_user_msg)
         try:
             client = get_genai_client()
         except Exception as e:
-            if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted"]):
-                return _get_rate_limit_scammer_reply(persona, current_threat_context, latest_user_msg)
-            return _get_deterministic_scammer_reply(latest_user_msg, persona)
+            logger.warning("Could not initialize Gemini client for honeypot (%s). Using authentic fallback reply.", e)
+            return _get_rate_limit_scammer_reply(persona, current_threat_context, latest_user_msg)
 
     prompt = (
         f"Active Persona: {persona}\n"
@@ -332,9 +330,8 @@ def simulate_scammer_reply(
         data = ScammerTurn.model_validate_json(response.text)
         return {"content": data.reply, "tactic": data.tactic}
     except Exception as e:
-        if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted", "resourceexhausted"]):
-            logger.warning("Scammer simulation counter-interrogation hit 429/quota error (%s). Returning authentic fallback reply.", e)
-            return _get_rate_limit_scammer_reply(persona, current_threat_context, latest_user_msg)
-        logger.warning("Scammer simulation LLM turn failed (%s). Using deterministic fallback.", e)
-        return _get_deterministic_scammer_reply(latest_user_msg, persona)
+        logger.warning(
+            "Scammer simulation API failure (%s). Returning authentic fallback reply.", e
+        )
+        return _get_rate_limit_scammer_reply(persona, current_threat_context, latest_user_msg)
 

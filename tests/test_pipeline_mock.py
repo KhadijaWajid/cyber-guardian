@@ -230,7 +230,7 @@ def test_default_model_chain_values():
     from src.honeypot import HONEYPOT_MODEL_CHAIN
     from src.advisor import ADVISOR_MODEL_CHAIN
 
-    expected = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    expected = ["gemini-2.5-flash", "gemini-3.8-flash"]
     assert DEFAULT_MODEL_CHAIN == expected
     assert ANALYZER_MODEL_CHAIN == expected
     assert HONEYPOT_MODEL_CHAIN == expected
@@ -255,7 +255,7 @@ def test_404_not_found_immediately_falls_forward_to_next_model():
         client=mock_client,
         contents="ping",
         config=types.GenerateContentConfig(),
-        model_chain=["gemini-retired-model", "gemini-2.0-flash"],
+        model_chain=["gemini-retired-model", "gemini-2.5-flash"],
         backoff_delays=[1.0, 2.0],
     )
 
@@ -383,6 +383,42 @@ def test_end_to_end_pipeline_with_429_quota_exhaustion():
     assert report.is_fallback is True
     assert report.overall_risk == "HIGH"
     assert "DO NOT" in " ".join(report.recommended_actions)
+
+
+def test_analyzer_404_or_general_exception_triggers_heuristic_fallback():
+    """Verifies that any remote 404 or unexpected exception in analyzer triggers heuristic fallback."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "404 NOT_FOUND: models/gemini-2.5-flash is not found or deprecated"
+    )
+
+    sample = "URGENT: Account locked, verify password at http://phish-test.xyz/login immediately."
+    signals = analyze_text(sample, client=mock_client)
+
+    assert isinstance(signals, ThreatSignals)
+    assert signals.is_fallback is True
+    assert signals.urgency_detected is True
+    assert signals.sensitive_info_requested is True
+
+
+def test_advisor_500_or_general_exception_triggers_heuristic_fallback():
+    """Verifies that any remote 500 or unexpected exception in advisor triggers heuristic advice."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "500 INTERNAL: Internal backend failure"
+    )
+
+    signals = ThreatSignals(
+        urgency_detected=True,
+        sensitive_info_requested=True,
+        key_findings=["Test finding"],
+    )
+
+    report = generate_advice(signals, client=mock_client)
+    assert isinstance(report, ThreatReport)
+    assert report.is_fallback is True
+    assert report.overall_risk in ["HIGH", "MEDIUM"]
+
 
 
 

@@ -18,8 +18,7 @@ logger = logging.getLogger("cyber_guardian.analyzer")
 
 ANALYZER_MODEL_CHAIN: List[str] = [
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-3.8-flash",
 ]
 
 
@@ -253,10 +252,8 @@ def analyze_text(text: str, client: Optional[genai.Client] = None) -> ThreatSign
         try:
             client = get_genai_client()
         except Exception as e:
-            if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted"]):
-                logger.warning("Could not initialize Gemini client (%s). Engaging heuristic fallback.", e)
-                return generate_heuristic_threat_signals(text, heuristics_results=heuristics_results)
-            raise
+            logger.warning("Could not initialize Gemini client (%s). Engaging heuristic fallback.", e)
+            return generate_heuristic_threat_signals(text, heuristics_results=heuristics_results)
 
     try:
         response = generate_with_fallback(
@@ -267,12 +264,10 @@ def analyze_text(text: str, client: Optional[genai.Client] = None) -> ThreatSign
         )
         signals = ThreatSignals.model_validate_json(response.text)
     except Exception as e:
-        if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted", "resourceexhausted"]):
-            logger.warning(
-                "Gemini API rate limit or quota exceeded (%s). Engaging 100%% resilient heuristic fallback.", e
-            )
-            return generate_heuristic_threat_signals(text, heuristics_results=heuristics_results)
-        raise
+        logger.warning(
+            "Gemini API model error or remote failure (%s). Engaging 100%% resilient heuristic fallback.", e
+        )
+        return generate_heuristic_threat_signals(text, heuristics_results=heuristics_results)
 
     # Attach deterministic heuristics results as typed HeuristicResult models
     signals.heuristics_results = [

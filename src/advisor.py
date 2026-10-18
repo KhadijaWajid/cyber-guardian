@@ -17,8 +17,7 @@ logger = logging.getLogger("cyber_guardian.advisor")
 
 ADVISOR_MODEL_CHAIN: List[str] = [
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
+    "gemini-3.8-flash",
 ]
 
 ADVISOR_SYSTEM_INSTRUCTION = """
@@ -137,9 +136,8 @@ def generate_advice(signals: ThreatSignals, client: Optional[genai.Client] = Non
         try:
             client = get_genai_client()
         except Exception as e:
-            if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted", "api_key"]):
-                return generate_heuristic_advice(signals)
-            raise
+            logger.warning("Could not initialize Gemini client for advisor (%s). Falling back to heuristic advice.", e)
+            return generate_heuristic_advice(signals)
 
     prompt = (
         "Here are the technical threat signals extracted from a user-submitted message:\n\n"
@@ -165,10 +163,10 @@ def generate_advice(signals: ThreatSignals, client: Optional[genai.Client] = Non
         report.threat_signals = signals
         return report
     except Exception as e:
-        if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted", "resourceexhausted"]):
-            logger.warning("Safety Advisor hit 429 rate limit / quota error (%s). Falling back to heuristic advice.", e)
-            return generate_heuristic_advice(signals)
-        raise
+        logger.warning(
+            "Safety Advisor API model error or remote failure (%s). Falling back to heuristic advice.", e
+        )
+        return generate_heuristic_advice(signals)
 
 
 def main():

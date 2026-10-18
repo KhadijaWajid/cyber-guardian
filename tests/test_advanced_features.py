@@ -433,4 +433,22 @@ def test_simulate_scammer_reply_on_429_family_lure():
     assert res["tactic"] == "⚡ Tactic: False Urgency & Credential Harvesting"
 
 
+def test_simulate_scammer_reply_on_404_or_general_exception():
+    from src.honeypot import simulate_scammer_reply
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "404 NOT_FOUND: models/gemini-2.5-flash is not found"
+    )
+
+    res = simulate_scammer_reply(
+        messages=[{"role": "user", "content": "Who is this?"}],
+        persona="Bank Fraud Department",
+        client=mock_client,
+    )
+
+    assert "6-digit confirmation code" in res["content"]
+    assert res["tactic"] == "⚡ Tactic: False Urgency & Credential Harvesting"
+
+
+
 
