@@ -1,0 +1,7 @@
+
+.env
+__pycache__/
+*.pyc
+dist/
+build/
+cyber_guardian.db
