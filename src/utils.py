@@ -13,10 +13,11 @@ from google.genai import types
 load_dotenv()
 logger = logging.getLogger("cyber_guardian")
 
-# Fallback chain prioritizing active modern production Gemini models
+# Fallback chain prioritizing active modern production Gemini models with 1,500 RPD free tier
 DEFAULT_MODEL_CHAIN: List[str] = [
-    "gemini-3.8-flash",
-    "gemini-3.1-pro-preview",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
 ]
 
 __all__ = [

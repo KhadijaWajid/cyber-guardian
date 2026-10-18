@@ -398,3 +398,39 @@ def test_simulate_scammer_reply_family_distress():
     assert "Emotional Coercion" in res["tactic"]
 
 
+def test_simulate_scammer_reply_on_429_quota_error():
+    from src.honeypot import simulate_scammer_reply
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "429 RESOURCE_EXHAUSTED: Rate limit exceeded for quota"
+    )
+
+    res = simulate_scammer_reply(
+        messages=[{"role": "user", "content": "What is your badge number?"}],
+        persona="Bank Fraud Department",
+        client=mock_client,
+    )
+
+    assert "Urgent: Your account verification failed" in res["content"]
+    assert "6-digit confirmation code" in res["content"]
+    assert res["tactic"] == "⚡ Tactic: False Urgency & Credential Harvesting"
+
+
+def test_simulate_scammer_reply_on_429_family_lure():
+    from src.honeypot import simulate_scammer_reply
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "429 RESOURCE_EXHAUSTED: Rate limit exceeded"
+    )
+
+    res = simulate_scammer_reply(
+        messages=[{"role": "user", "content": "Are you really my son?"}],
+        persona="Urgent Family Distress",
+        client=mock_client,
+    )
+
+    assert "6-digit confirmation code" in res["content"]
+    assert res["tactic"] == "⚡ Tactic: False Urgency & Credential Harvesting"
+
+
+

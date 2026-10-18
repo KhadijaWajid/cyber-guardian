@@ -49,6 +49,10 @@ class ThreatSignals(BaseModel):
         default="Automated security analysis does not guarantee complete immunity. Proceed with caution.",
         description="Standard safety advisory disclaimer"
     )
+    is_fallback: bool = Field(
+        default=False,
+        description="True if analysis was generated via heuristic offline engine due to rate limits or API exhaustion",
+    )
 
 
 class ThreatReport(BaseModel):
@@ -68,4 +72,8 @@ class ThreatReport(BaseModel):
     disclaimer: str = Field(
         default="Automated security analysis provides guidance based on static patterns and does not guarantee complete immunity. Always proceed with caution.",
         description="Standard consumer safety disclaimer"
+    )
+    is_fallback: bool = Field(
+        default=False,
+        description="True if report was generated via heuristic offline engine due to rate limits or API exhaustion",
     )

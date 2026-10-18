@@ -1352,17 +1352,30 @@ with col_analysis:
 
                 except Exception as e:
                     err_str = str(e)
-                    if "503" in err_str or "unavailable" in err_str.lower() or "high demand" in err_str.lower():
+                    if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+                        from src.analyzer import generate_heuristic_threat_signals
+                        from src.advisor import generate_heuristic_advice
+
+                        signals = generate_heuristic_threat_signals(user_input.strip())
+                        report = generate_heuristic_advice(signals)
+
+                        st.session_state["current_report"] = report
+                        st.session_state["current_input"] = user_input.strip()
+
+                        snippet = user_input.strip()[:40] + ("..." if len(user_input.strip()) > 40 else "")
+                        st.session_state["scan_history"].append({
+                            "timestamp": datetime.datetime.now().strftime("%H:%M:%S"),
+                            "preview": snippet,
+                            "risk": report.overall_risk,
+                            "report": report,
+                            "full_text": user_input.strip(),
+                        })
+                    elif "503" in err_str or "unavailable" in err_str.lower() or "high demand" in err_str.lower():
                         st.warning(
                             "⚠️ **AI Service High Demand (503 UNAVAILABLE)**\n\n"
                             "Google Gemini servers are currently experiencing peak global traffic. "
                             "Our automatic retries and fallback models were attempted, but servers are temporarily saturated.\n\n"
                             "👉 **Recommendation:** Please wait 5–10 seconds and click **Run Analysis** again."
-                        )
-                    elif "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
-                        st.warning(
-                            "⚠️ **Rate Limit Exceeded (429)**\n\n"
-                            "API request quota is temporarily exhausted. Please wait a moment before trying again."
                         )
                     elif "api_key" in err_str.lower():
                         st.warning(
@@ -1467,6 +1480,27 @@ with col_analysis:
             else "None"
         )
 
+        is_offline_fallback = getattr(signals, "is_fallback", False) or getattr(report, "is_fallback", False)
+
+        if is_offline_fallback:
+            st.markdown(
+                """
+                <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 0.65rem 1rem; margin-bottom: 0.85rem; display: flex; align-items: center; gap: 0.6rem;">
+                    <span style="font-size: 1.15rem;">⚡</span>
+                    <div style="font-size: 0.85rem; color: #fbbf24; font-weight: 500;">
+                        <b>Heuristic Offline Mode Active:</b> Cloud AI quota reached. Threat analysis was completed deterministically using our internal heuristic engine.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        pipeline_val = "Heuristic" if is_offline_fallback else "Active"
+        pipeline_subval = " (Offline)" if is_offline_fallback else " (4/4)"
+        pipeline_dot = "dot-amber" if is_offline_fallback else "dot-blue"
+        pipeline_delta = "Heuristic Offline Mode Active" if is_offline_fallback else "Multi-Vector Active"
+        pipeline_delta_color = "#fbbf24" if is_offline_fallback else "#38bdf8"
+
         st.markdown('<div style="height: 0.5rem;"></div>', unsafe_allow_html=True)
 
         # 1. Elevated Quick Stats Bar (4 KPI Cards)
@@ -1499,10 +1533,10 @@ with col_analysis:
             <div class="kpi-card">
                 <div class="kpi-header">
                     <span class="kpi-label">Processing Pipeline</span>
-                    <span class="dot-blue"></span>
+                    <span class="{pipeline_dot}"></span>
                 </div>
-                <div class="kpi-value">Active<span class="kpi-subval"> (4/4)</span></div>
-                <div class="kpi-delta" style="color: #38bdf8;">Multi-Vector Active</div>
+                <div class="kpi-value">{pipeline_val}<span class="kpi-subval">{pipeline_subval}</span></div>
+                <div class="kpi-delta" style="color: {pipeline_delta_color};">{pipeline_delta}</div>
             </div>
         </div>
         """

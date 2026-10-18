@@ -7,9 +7,15 @@ from google import genai
 from google.genai import types
 
 from src.analyzer import get_genai_client
-from src.utils import generate_with_fallback
+from src.utils import generate_with_fallback, is_rate_limit_error
 
 logger = logging.getLogger("cyber_guardian.honeypot")
+
+HONEYPOT_MODEL_CHAIN: List[str] = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+]
 
 
 class ProbeItem(BaseModel):
@@ -147,6 +153,7 @@ def generate_counter_probe(
             client=client,
             contents=prompt,
             config=config,
+            model_chain=HONEYPOT_MODEL_CHAIN,
         )
         data = HoneypotAnalysis.model_validate_json(response.text)
         return data.model_dump()
@@ -181,6 +188,43 @@ PERSONA INSTRUCTIONS:
   '⚡ Tactic: <Tactic Name> | 🎯 Objective: <Immediate Objective>'
 - Output strictly structured JSON conforming to the requested schema.
 """
+
+
+def _get_rate_limit_scammer_reply(
+    persona: str = "", current_threat_context: str = "", latest_user_msg: str = ""
+) -> Dict[str, str]:
+    """
+    Returns an authentic simulated attacker reply based on lure type when
+    counter-interrogation encounters a 429 Rate Limit or Quota Exceeded error.
+    """
+    combined = f"{persona} {current_threat_context} {latest_user_msg}".lower()
+
+    if "family" in combined or any(k in combined for k in ["mom", "dad", "son", "daughter", "stranded", "hospital", "cabin", "dog"]):
+        reply = (
+            "Urgent: I lost my phone and am stranded right now! Please don't delay, "
+            "reply with the 6-digit confirmation code immediately to avoid permanent suspension."
+        )
+    elif "tech support" in combined or any(k in combined for k in ["microsoft", "windows", "virus", "remote", "anydesk"]):
+        reply = (
+            "Urgent: Critical network anomalies detected on your workstation. "
+            "Please reply with the 6-digit confirmation code immediately to avoid permanent suspension."
+        )
+    elif "crypto" in combined or any(k in combined for k in ["wallet", "investment", "bitcoin", "deposit", "roi"]):
+        reply = (
+            "Urgent: Your wallet security verification failed. "
+            "Please reply with the 6-digit confirmation code immediately to avoid permanent suspension."
+        )
+    else:
+        # Bank Fraud / Account verification / Default lure
+        reply = (
+            "Urgent: Your account verification failed. "
+            "Please reply with the 6-digit confirmation code immediately to avoid permanent suspension."
+        )
+
+    return {
+        "content": reply,
+        "tactic": "⚡ Tactic: False Urgency & Credential Harvesting",
+    }
 
 
 def _get_deterministic_scammer_reply(user_message: str, persona: str) -> Dict[str, str]:
@@ -260,7 +304,9 @@ def simulate_scammer_reply(
             return _get_deterministic_scammer_reply(latest_user_msg, persona)
         try:
             client = get_genai_client()
-        except Exception:
+        except Exception as e:
+            if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted"]):
+                return _get_rate_limit_scammer_reply(persona, current_threat_context, latest_user_msg)
             return _get_deterministic_scammer_reply(latest_user_msg, persona)
 
     prompt = (
@@ -281,10 +327,14 @@ def simulate_scammer_reply(
             client=client,
             contents=prompt,
             config=config,
+            model_chain=HONEYPOT_MODEL_CHAIN,
         )
         data = ScammerTurn.model_validate_json(response.text)
         return {"content": data.reply, "tactic": data.tactic}
     except Exception as e:
+        if is_rate_limit_error(e) or any(k in str(e).lower() for k in ["429", "quota", "resource_exhausted", "resourceexhausted"]):
+            logger.warning("Scammer simulation counter-interrogation hit 429/quota error (%s). Returning authentic fallback reply.", e)
+            return _get_rate_limit_scammer_reply(persona, current_threat_context, latest_user_msg)
         logger.warning("Scammer simulation LLM turn failed (%s). Using deterministic fallback.", e)
         return _get_deterministic_scammer_reply(latest_user_msg, persona)
 

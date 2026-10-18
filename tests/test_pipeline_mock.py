@@ -226,7 +226,15 @@ def test_429_rate_limit_swaps_to_backup_key(monkeypatch):
 
 def test_default_model_chain_values():
     from src.utils import DEFAULT_MODEL_CHAIN
-    assert DEFAULT_MODEL_CHAIN == ["gemini-3.8-flash", "gemini-3.1-pro-preview"]
+    from src.analyzer import ANALYZER_MODEL_CHAIN
+    from src.honeypot import HONEYPOT_MODEL_CHAIN
+    from src.advisor import ADVISOR_MODEL_CHAIN
+
+    expected = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    assert DEFAULT_MODEL_CHAIN == expected
+    assert ANALYZER_MODEL_CHAIN == expected
+    assert HONEYPOT_MODEL_CHAIN == expected
+    assert ADVISOR_MODEL_CHAIN == expected
 
 
 def test_404_not_found_immediately_falls_forward_to_next_model():
@@ -239,7 +247,7 @@ def test_404_not_found_immediately_falls_forward_to_next_model():
 
     # Primary model returns 404 deprecated/retired; secondary model succeeds immediately
     mock_client.models.generate_content.side_effect = [
-        Exception("404 NOT_FOUND: This model models/gemini-2.5-flash is no longer available to new users."),
+        Exception("404 NOT_FOUND: This model models/gemini-retired-model is no longer available to new users."),
         success_resp,
     ]
 
@@ -247,7 +255,7 @@ def test_404_not_found_immediately_falls_forward_to_next_model():
         client=mock_client,
         contents="ping",
         config=types.GenerateContentConfig(),
-        model_chain=["gemini-2.5-flash", "gemini-3.8-flash"],
+        model_chain=["gemini-retired-model", "gemini-2.0-flash"],
         backoff_delays=[1.0, 2.0],
     )
 
@@ -305,6 +313,77 @@ def test_preset_lures_configured():
     assert len(SAMPLE_FAMILY_EMERGENCY) > 0
     assert len(SAMPLE_DISCOUNT) > 0
     assert len(SAMPLE_BENIGN) > 0
+
+
+def test_analyzer_429_quota_exhausted_heuristic_fallback():
+    """Verifies that 429 Rate Limit / Quota Exceeded does not raise and returns heuristic fallback signals."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "429 RESOURCE_EXHAUSTED: Rate limit exceeded for quota metric 'Generate Content API'"
+    )
+
+    sample = (
+        "URGENT: Your account has been locked. Verify immediately at "
+        "http://wells-fargo-security.update-account.com/login and input your password and OTP."
+    )
+
+    signals = analyze_text(sample, client=mock_client)
+
+    assert isinstance(signals, ThreatSignals)
+    assert signals.is_fallback is True
+    assert signals.urgency_detected is True
+    assert signals.sensitive_info_requested is True
+    assert len(signals.suspicious_urls) > 0
+    assert "hxxp://" in signals.suspicious_urls[0].defanged_url
+    assert "[.]" in signals.suspicious_urls[0].defanged_url
+    assert any("Heuristic Offline Mode Active" in kf for kf in signals.key_findings)
+
+
+def test_advisor_429_quota_exhausted_heuristic_fallback():
+    """Verifies that 429 Rate Limit in advisor does not raise and returns heuristic report."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "429 RESOURCE_EXHAUSTED: Quota exceeded"
+    )
+
+    input_signals = ThreatSignals(
+        urgency_detected=True,
+        urgency_explanation="Immediate action required",
+        sensitive_info_requested=True,
+        sensitive_info_details=["password", "OTP"],
+        impersonation_target="Bank",
+        key_findings=["Urgent password request"],
+    )
+
+    report = generate_advice(input_signals, client=mock_client)
+
+    assert isinstance(report, ThreatReport)
+    assert report.is_fallback is True
+    assert report.overall_risk == "HIGH"
+    assert len(report.recommended_actions) > 0
+    assert any("DO NOT" in act for act in report.recommended_actions)
+
+
+def test_end_to_end_pipeline_with_429_quota_exhaustion():
+    """Verifies that full analyzer -> advisor pipeline succeeds seamlessly under 429 quota exhaustion."""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception(
+        "429 RESOURCE_EXHAUSTED: Quota exhausted on free tier"
+    )
+
+    sample = (
+        "URGENT: Immediate action required! Your Chase account will be suspended within 2 hours. "
+        "Visit http://chase-security-alert.xyz/verify and submit your 6-digit OTP."
+    )
+
+    signals = analyze_text(sample, client=mock_client)
+    assert signals.is_fallback is True
+
+    report = generate_advice(signals, client=mock_client)
+    assert report.is_fallback is True
+    assert report.overall_risk == "HIGH"
+    assert "DO NOT" in " ".join(report.recommended_actions)
+
 
 
 
