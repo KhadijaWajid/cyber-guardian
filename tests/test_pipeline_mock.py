@@ -1,3 +1,4 @@
+import os
 import json
 import pytest
 from unittest.mock import MagicMock
@@ -253,6 +254,58 @@ def test_404_not_found_immediately_falls_forward_to_next_model():
     assert res == success_resp
     # Exactly 2 calls: 1 on deprecated model (no wasteful retries), 1 on fallback model
     assert mock_client.models.generate_content.call_count == 2
+
+
+def test_get_api_key_from_env(monkeypatch):
+    from src.app import get_api_key
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-env-key-789")
+    assert get_api_key() == "test-env-key-789"
+
+
+def test_get_api_key_from_secrets(monkeypatch):
+    import streamlit as st
+    from src.app import get_api_key
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(st, "secrets", {"GEMINI_API_KEY": "test-secret-key-456"})
+    assert get_api_key() == "test-secret-key-456"
+
+
+def test_get_api_key_none_when_empty(monkeypatch):
+    import streamlit as st
+    from src.app import get_api_key
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(st, "secrets", {})
+    assert get_api_key() is None
+
+
+def test_analyzer_get_genai_client_with_secrets_fallback(monkeypatch):
+    import streamlit as st
+    from src.analyzer import get_genai_client
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(st, "secrets", {"GEMINI_API_KEY": "test-genai-secret-key"})
+    client = get_genai_client()
+    assert client is not None
+    assert os.getenv("GEMINI_API_KEY") == "test-genai-secret-key"
+
+
+def test_preset_lures_configured():
+    from src.app import (
+        SAMPLE_PHISHING,
+        SAMPLE_FAMILY_EMERGENCY,
+        SAMPLE_DISCOUNT,
+        SAMPLE_BENIGN,
+    )
+
+    assert len(SAMPLE_PHISHING) > 0
+    assert "https://" in SAMPLE_PHISHING
+    assert len(SAMPLE_FAMILY_EMERGENCY) > 0
+    assert len(SAMPLE_DISCOUNT) > 0
+    assert len(SAMPLE_BENIGN) > 0
+
 
 
 

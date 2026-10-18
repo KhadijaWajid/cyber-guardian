@@ -38,7 +38,18 @@ Tasks:
 def get_genai_client() -> genai.Client:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable is not set. Please add it to your .env file.")
+        try:
+            import streamlit as st
+
+            if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
+                api_key = str(st.secrets["GEMINI_API_KEY"])
+                os.environ["GEMINI_API_KEY"] = api_key
+        except Exception:
+            pass
+    if not api_key:
+        raise ValueError(
+            "GEMINI_API_KEY environment variable is not set. Please add it to your .env file or Streamlit secrets."
+        )
     return genai.Client(api_key=api_key)
 
 

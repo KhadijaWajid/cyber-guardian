@@ -7,11 +7,48 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+import streamlit as st
+
+# 1. Try loading from .env
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+# 2. Bridge Streamlit secrets into os.environ
+try:
+    if hasattr(st, "secrets"):
+        if "GEMINI_API_KEY" in st.secrets and not os.environ.get(
+            "GEMINI_API_KEY"
+        ):
+            os.environ["GEMINI_API_KEY"] = str(st.secrets["GEMINI_API_KEY"])
+        if "GEMINI_API_KEY_BACKUP" in st.secrets and not os.environ.get(
+            "GEMINI_API_KEY_BACKUP"
+        ):
+            os.environ["GEMINI_API_KEY_BACKUP"] = str(
+                st.secrets["GEMINI_API_KEY_BACKUP"]
+            )
+except Exception:
+    pass
+
+
+# 3. Helper function for modules to retrieve the key
+def get_api_key() -> str | None:
+    if os.environ.get("GEMINI_API_KEY"):
+        return os.environ.get("GEMINI_API_KEY")
+    try:
+        if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
+            return str(st.secrets["GEMINI_API_KEY"])
+    except Exception:
+        pass
+    return None
+
 import re
 import json
 import datetime
 import urllib.parse
-import streamlit as st
 
 from src.analyzer import analyze_text
 from src.advisor import generate_advice
@@ -1330,7 +1367,7 @@ with col_analysis:
                     elif "api_key" in err_str.lower():
                         st.warning(
                             "⚠️ **API Key Configuration Error**\n\n"
-                            "Please verify that your `GEMINI_API_KEY` is properly configured in your `.env` file."
+                            "Please verify that your `GEMINI_API_KEY` is properly configured in your `.env` file or Streamlit secrets."
                         )
                     else:
                         st.warning(
